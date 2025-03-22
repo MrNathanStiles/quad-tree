@@ -5,6 +5,7 @@ use std::{
 
 use crate::{quad_tree_bounds::QuadTreeBounds, quad_tree_leaf::QuadTreeLeaf};
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 pub struct QuadTree {
     pub identity: u64,
     pub root: bool,
@@ -56,8 +57,9 @@ impl QuadTree {
         return -1;
     }
 
-    pub fn remove(leaf: &QuadTreeLeaf) {
+    pub fn remove(leaf: &mut QuadTreeLeaf) {
         let parent = unsafe { &mut *leaf.parent };
+        leaf.parent = ptr::null_mut();
 
         let mut removed = false;
 
@@ -114,15 +116,12 @@ impl QuadTree {
         if this.items.len() > 0 {
             return;
         }
-
         if this.stuck.len() > 0 {
             return;
         }
-
         if branch_count > 0 {
             return;
         }
-
         if this.parent.is_null() {
             return;
         }
@@ -141,6 +140,7 @@ impl QuadTree {
             branch.climb(list);
         }
     }
+
     pub fn query(&self, area: QuadTreeBounds, results: &mut Vec<QuadTreeLeaf>) {
         let mut list = Vec::new();
 
@@ -236,7 +236,6 @@ impl QuadTree {
                 if self.bounds.contains(new_leaf.bounds) {
                     break;
                 }
-                //QuadTree::log(format!("growing level: {level}"));
                 self.grow();
             }
         }
@@ -246,8 +245,6 @@ impl QuadTree {
         if self.items.len() < 2 {
             return;
         }
-
-        //QuadTree::log(format!("clearing list level: {level}"));
 
         while self.items.len() > 0 {
             let mut leaf = self.items.pop().unwrap();
@@ -261,7 +258,6 @@ impl QuadTree {
             }
 
             if self.branches[index as usize].is_null() {
-                //QuadTree::log(format!("new tree level: {level}"));
                 let size = self.bounds.w / 2;
                 let mut x = self.bounds.x;
                 let mut y = self.bounds.y;
@@ -274,31 +270,24 @@ impl QuadTree {
                 } else if 3 == index {
                     y += size;
                 }
-
                 let new_branch = QuadTree::new(false, x, y, size, ptr::from_mut(self));
-
                 self.branches[index as usize] = Box::into_raw(Box::new(new_branch));
             }
-
             let branch = unsafe { &mut *self.branches[index as usize] };
-
             branch.insert(leaf, level)
         }
-        //QuadTree::log(format!("done inserting level: {level}"));
     }
 }
 
 impl Drop for QuadTree {
     fn drop(&mut self) {
-        unsafe {
-            
-            for i in 0..4 {
-                let branch_pointer = self.branches[i];
-                if branch_pointer.is_null() { continue; }
-                drop(unsafe { Box::from_raw(branch_pointer) });
-                self.branches[i] = null_mut();
+        for i in 0..4 {
+            let branch_pointer = self.branches[i];
+            if branch_pointer.is_null() {
+                continue;
             }
-            
+            drop(unsafe { Box::from_raw(branch_pointer) });
+            self.branches[i] = null_mut();
         }
     }
 }

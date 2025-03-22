@@ -18,6 +18,10 @@ impl QuadTreeLeaf {
             identity,
         }
     }
+
+    pub fn remove(&mut self) {
+        QuadTree::remove(self);
+    }
 }
 
 impl Clone for QuadTreeLeaf {
