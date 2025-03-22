@@ -42,7 +42,6 @@ impl QuadTreeBounds {
         if self.x >= other.x + other.w {
             return false;
         }
-
         if other.x >= self.x + self.w {
             return false;
         }
