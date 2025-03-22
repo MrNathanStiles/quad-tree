@@ -6,14 +6,15 @@ pub struct QuadTreeBounds {
     pub w: i64,
     pub h: i64,
 }
+
 impl Clone for QuadTreeBounds {
     fn clone(&self) -> Self {
         Self { x: self.x.clone(), y: self.y.clone(), w: self.w.clone(), h: self.h.clone() }
     }
 }
-impl Copy for QuadTreeBounds {
 
-}
+impl Copy for QuadTreeBounds { }
+
 impl Display for QuadTreeBounds {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("qtb x: ").unwrap();
@@ -27,7 +28,6 @@ impl Display for QuadTreeBounds {
     }
 }
 
-
 impl QuadTreeBounds {
     pub fn new(x: i64, y: i64, w: i64, h: i64) -> Self {
         Self { x, y, w, h }
@@ -39,12 +39,6 @@ impl QuadTreeBounds {
             && self.y + self.h >= other.y + other.h
     }
     pub fn intersects(&self, other: QuadTreeBounds) -> bool {
-        /*
-            RectA.Left < RectB.Right &&
-            RectA.Right > RectB.Left &&
-            RectA.Top > RectB.Bottom &&
-            RectA.Bottom < RectB.Top
-        */
         if self.x >= other.x + other.w {
             return false;
         }

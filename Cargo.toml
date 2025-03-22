@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-speedy2d = "2.1.0"
+
 
 [build]
 target = "x86_64-pc-windows-msvc"
