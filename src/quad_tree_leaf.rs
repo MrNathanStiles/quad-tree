@@ -1,13 +1,13 @@
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicUsize, Ordering},
 };
 
 use crate::{quad_tree::QuadTree, quad_tree_bounds::QuadTreeBounds};
 
-static SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static SEQUENCE: AtomicUsize = AtomicUsize::new(1);
 pub struct QuadTreeLeaf {
-    pub identity: u64,
+    pub identity: usize,
     pub bounds: QuadTreeBounds,
     pub parent: Option<Arc<Mutex<QuadTree>>>,
 }
