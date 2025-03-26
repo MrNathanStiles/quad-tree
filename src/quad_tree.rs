@@ -1,7 +1,13 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    mem,
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
+    thread,
 };
+
+pub static TREES_HELD: AtomicU64 = AtomicU64::new(0);
 
 use crate::{quad_tree_bounds::QuadTreeBounds, quad_tree_leaf::QuadTreeLeaf};
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -13,7 +19,7 @@ pub struct QuadTree {
     pub items: Vec<QuadTreeLeaf>,
     pub stuck: Vec<QuadTreeLeaf>,
     pub branches: Vec<Option<Arc<Mutex<QuadTree>>>>,
-    pub parent: Option<Arc<Mutex<QuadTree>>>,
+    pub parent: Option<Weak<Mutex<QuadTree>>>,
 }
 
 impl QuadTree {
@@ -22,8 +28,9 @@ impl QuadTree {
         x: i64,
         y: i64,
         size: i64,
-        parent: Option<Arc<Mutex<QuadTree>>>,
+        parent: Option<Weak<Mutex<QuadTree>>>,
     ) -> Self {
+        TREES_HELD.fetch_add(1, Ordering::Relaxed);
         let mut branches = Vec::with_capacity(4);
         for _ in 0..4 {
             branches.push(None);
@@ -65,7 +72,12 @@ impl QuadTree {
     }
 
     pub fn remove(mut leaf: QuadTreeLeaf) -> bool {
-        let parent_mutex = leaf.parent.unwrap().clone();
+        let strong = leaf.get_parent();
+        if strong.is_none() {
+            return false;
+        }
+
+        let parent_mutex = strong.unwrap().clone();
         let mut parent = parent_mutex.lock().unwrap();
 
         leaf.parent = None;
@@ -105,10 +117,12 @@ impl QuadTree {
             return result;
         }
 
-        let next = parent.parent.clone().unwrap();
-
+        let strong = parent.parent.clone().unwrap().upgrade();
+        if strong.is_none() {
+            return result;
+        }
+        let next = strong.unwrap();
         let identity = parent.identity;
-
         drop(parent);
 
         Self::remove_child(next, identity, 0);
@@ -148,7 +162,11 @@ impl QuadTree {
             return;
         }
         let identity = this.identity;
-        let next = this.parent.clone().unwrap();
+        let strong = this.parent.clone().unwrap().upgrade();
+        if strong.is_none() {
+            return;
+        }
+        let next = strong.unwrap();
         drop(this);
         QuadTree::remove_child(next, identity, level + 1);
     }
@@ -165,7 +183,27 @@ impl QuadTree {
             QuadTree::climb(branch.unwrap(), list);
         }
     }
+    pub fn thread_query(&mut self, area: QuadTreeBounds) -> Vec<Vec<QuadTreeLeaf>> {
+        let mut threads = Vec::new();
+        let mut results = Vec::new();
+        for i in 0..4 {
+            if self.branches[i].is_none() {
+                continue;
+            }
+            let arc = self.branches[i].clone().unwrap();
 
+            threads.push(thread::spawn(move || {
+                let mut results = Vec::new();
+                QuadTree::query(arc, area, &mut results);
+                results
+            }));
+        }
+        for t in threads {
+            let joined = t.join().unwrap();
+            results.push(joined);
+        }
+        results
+    }
     pub fn query(arc: Arc<Mutex<QuadTree>>, area: QuadTreeBounds, results: &mut Vec<QuadTreeLeaf>) {
         let mut list = Vec::new();
 
@@ -203,7 +241,6 @@ impl QuadTree {
     }
 
     pub fn grow(&mut self, zarc: Arc<Mutex<QuadTree>>) {
-        //let mut this = arc.lock().unwrap();
         let size = self.bounds.w;
         let half = size / 2;
 
@@ -213,7 +250,7 @@ impl QuadTree {
                 self.bounds.x - half,
                 self.bounds.y - half,
                 size,
-                Some(zarc.clone()),
+                Some(Arc::downgrade(&zarc)),
             );
 
             new_tree.branches[2] = self.branches[0].clone();
@@ -225,7 +262,7 @@ impl QuadTree {
                 self.bounds.x + half,
                 self.bounds.y - half,
                 size,
-                Some(zarc.clone()),
+                Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[3] = self.branches[1].clone();
             self.branches[1] = Some(Arc::new(Mutex::new(new_tree)));
@@ -236,7 +273,7 @@ impl QuadTree {
                 self.bounds.x + half,
                 self.bounds.y + half,
                 size,
-                Some(zarc.clone()),
+                Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[0] = self.branches[2].clone();
             self.branches[2] = Some(Arc::new(Mutex::new(new_tree)));
@@ -247,7 +284,7 @@ impl QuadTree {
                 self.bounds.x - half,
                 self.bounds.y + half,
                 size,
-                Some(zarc.clone()),
+                Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[1] = self.branches[3].clone();
             self.branches[3] = Some(Arc::new(Mutex::new(new_tree)));
@@ -271,7 +308,7 @@ impl QuadTree {
                 QuadTree::grow(&mut *this, arc.clone());
             }
         }
-        new_leaf.parent = Some(arc.clone());
+        new_leaf.parent = Some(Arc::downgrade(&arc));
         this.items.push(new_leaf);
         if this.items.len() < 2 {
             return;
@@ -283,7 +320,7 @@ impl QuadTree {
             let index = this.index(leaf.bounds);
 
             if index < 0 {
-                leaf.parent = Some(arc.clone());
+                leaf.parent = Some(Arc::downgrade(&arc));
                 this.stuck.push(leaf);
                 continue;
             }
@@ -301,7 +338,7 @@ impl QuadTree {
                 } else if 3 == index {
                     y += size;
                 }
-                let new_branch = QuadTree::new(false, x, y, size, Some(arc.clone()));
+                let new_branch = QuadTree::new(false, x, y, size, Some(Arc::downgrade(&arc)));
                 this.branches[index as usize] = Some(Arc::new(Mutex::new(new_branch)));
             }
             let branch_arc = this.branches[index as usize].clone().unwrap();
@@ -310,13 +347,29 @@ impl QuadTree {
     }
 }
 
+fn drop_helper(tree: &mut QuadTree, stack: &mut Vec<Arc<Mutex<QuadTree>>>) {
+    
+    for i in 0..4 {
+        if tree.branches[i].is_none() {
+            continue;
+        }
+        stack.push(mem::replace(&mut tree.branches[i], None).unwrap());
+    }
+}
 impl Drop for QuadTree {
     fn drop(&mut self) {
-        for i in 0..4 {
-            if self.branches[i].is_none() {
-                continue;
+        TREES_HELD.fetch_sub(1, Ordering::Relaxed);
+        let mut stack = Vec::new();
+        drop_helper(self, &mut stack);
+
+        loop {
+            let tree_option = stack.pop();
+            if tree_option.is_none() {
+                break;
             }
-            self.branches[i] = None;
+            let arc = tree_option.unwrap();
+            let mut tree = arc.lock().unwrap();
+            drop_helper(&mut tree, &mut stack);
         }
     }
 }
