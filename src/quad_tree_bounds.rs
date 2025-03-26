@@ -9,7 +9,7 @@ pub struct QuadTreeBounds {
 
 impl Clone for QuadTreeBounds {
     fn clone(&self) -> Self {
-        Self { x: self.x.clone(), y: self.y.clone(), w: self.w.clone(), h: self.h.clone() }
+        Self { x: self.x, y: self.y, w: self.w, h: self.h }
     }
 }
 
