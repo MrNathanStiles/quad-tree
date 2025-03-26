@@ -64,17 +64,20 @@ impl QuadTree {
         return -1;
     }
 
-    pub fn remove(mut leaf: QuadTreeLeaf) {
+    pub fn remove(mut leaf: QuadTreeLeaf) -> bool {
         let parent_mutex = leaf.parent.unwrap().clone();
         let mut parent = parent_mutex.lock().unwrap();
 
         leaf.parent = None;
 
+        let mut result = false;
         let mut item_count = 0;
         parent.items.retain(|l| {
             let retain = l.identity != leaf.identity;
             if retain {
                 item_count += 1;
+            } else {
+                result = true;
             }
             retain
         });
@@ -83,21 +86,23 @@ impl QuadTree {
             let retain = l.identity != leaf.identity;
             if retain {
                 item_count += 1;
+            } else {
+                result = true;
             }
             retain
         });
 
         if item_count > 0 {
-            return;
+            return result;
         }
 
         for branch in parent.branches.iter() {
             if branch.is_some() {
-                return;
+                return result;
             }
         }
         if parent.parent.is_none() {
-            return;
+            return result;
         }
 
         let next = parent.parent.clone().unwrap();
@@ -107,6 +112,7 @@ impl QuadTree {
         drop(parent);
 
         Self::remove_child(next, identity, 0);
+        return result;
     }
 
     fn remove_child(self_pointer: Arc<Mutex<QuadTree>>, child_identity: u64, level: usize) {

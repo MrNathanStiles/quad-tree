@@ -22,8 +22,8 @@ impl QuadTreeLeaf {
         }
     }
 
-    pub fn remove(self) {
-        QuadTree::remove(self);
+    pub fn remove(self) -> bool {
+        QuadTree::remove(self)
     }
 }
 
