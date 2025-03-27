@@ -9,11 +9,16 @@ pub struct QuadTreeBounds {
 
 impl Clone for QuadTreeBounds {
     fn clone(&self) -> Self {
-        Self { x: self.x, y: self.y, w: self.w, h: self.h }
+        Self {
+            x: self.x,
+            y: self.y,
+            w: self.w,
+            h: self.h,
+        }
     }
 }
 
-impl Copy for QuadTreeBounds { }
+impl Copy for QuadTreeBounds {}
 
 impl Display for QuadTreeBounds {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
