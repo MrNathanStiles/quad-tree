@@ -7,6 +7,8 @@ use super::{quad_tree_bounds::QuadTreeBounds, quad_tree_branch::QuadTreeBranch};
 
 
 static SEQUENCE: AtomicUsize = AtomicUsize::new(1);
+
+#[derive(Clone)]
 pub struct QuadTreeLeaf {
     pub identity: usize,
     pub bounds: QuadTreeBounds,
@@ -15,11 +17,10 @@ pub struct QuadTreeLeaf {
 
 impl QuadTreeLeaf {
     pub fn new(bounds: QuadTreeBounds, parent: Option<Weak<Mutex<QuadTreeBranch>>>) -> Self {
-        let identity = SEQUENCE.fetch_add(1, Ordering::Relaxed);
         Self {
             bounds,
             parent,
-            identity,
+            identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
         }
     }
 
@@ -28,19 +29,9 @@ impl QuadTreeLeaf {
     }
 
     pub fn get_parent(&self) -> Option<Arc<Mutex<QuadTreeBranch>>> {
-        if self.parent.is_none() {
-            return None;
-        }
-        self.parent.clone().unwrap().upgrade()
-    }
-}
-
-impl Clone for QuadTreeLeaf {
-    fn clone(&self) -> Self {
-        Self {
-            identity: self.identity,
-            bounds: self.bounds,
-            parent: self.parent.clone(),
+        match &self.parent {
+            Some(parent) => parent.upgrade(),
+            _ => None
         }
     }
 }

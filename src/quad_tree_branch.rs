@@ -3,9 +3,11 @@ use std::{
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
+        mpsc::Sender,
     },
-    thread,
 };
+
+use actr_task::task_manager::{Task, TaskManager};
 
 use super::{quad_tree_bounds::QuadTreeBounds, quad_tree_leaf::QuadTreeLeaf};
 
@@ -29,17 +31,14 @@ impl QuadTreeBranch {
         size: i64,
         parent: Option<Weak<Mutex<QuadTreeBranch>>>,
     ) -> Self {
-        let mut branches = Vec::with_capacity(4);
-        for _ in 0..4 {
-            branches.push(None);
-        }
+        
         Self {
             identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
             root,
             bounds: QuadTreeBounds::new(x, y, size, size),
             items: Vec::with_capacity(2),
             stuck: Vec::new(),
-            branches: branches,
+            branches: (0..4).map(|_|None).collect::<Vec<_>>(),
             parent: parent,
         }
     }
@@ -181,28 +180,48 @@ impl QuadTreeBranch {
             QuadTreeBranch::climb(branch.unwrap(), list);
         }
     }
-    pub fn thread_query(&mut self, area: QuadTreeBounds) -> Vec<Vec<QuadTreeLeaf>> {
-        let mut threads = Vec::new();
-        let mut results = Vec::new();
+    pub fn task_query(
+        &self,
+        area: QuadTreeBounds,
+        task_manager: TaskManager,
+        results: Sender<QuadTreeLeaf>,
+    ) {
+        if !self.bounds.intersects(area) {
+            return;
+        }
         for i in 0..4 {
             if self.branches[i].is_none() {
                 continue;
             }
-            let arc = self.branches[i].clone().unwrap();
+            let branch_mutex = self.branches[i].clone().unwrap();
 
-            threads.push(thread::spawn(move || {
-                let mut results = Vec::new();
-                QuadTreeBranch::query(arc, area, &mut results);
-                results
-            }));
+            let results_clone = results.clone();
+            let task_manager_clone = task_manager.clone();
+
+            let ztask = move || {
+                let branch = branch_mutex.lock().unwrap();
+                branch.task_query(area, task_manager_clone, results_clone);
+            };
+            task_manager.work(ztask).unwrap();
         }
-        for t in threads {
-            let joined = t.join().unwrap();
-            results.push(joined);
+        for leaf in self.items.iter() {
+            if area.intersects(leaf.bounds) {
+                results.send(leaf.clone()).unwrap();
+            }
         }
-        results
+
+        for leaf in self.stuck.iter() {
+            if area.intersects(leaf.bounds) {
+                results.send(leaf.clone()).unwrap();
+            }
+        }
     }
-    pub fn query(arc: Arc<Mutex<QuadTreeBranch>>, area: QuadTreeBounds, results: &mut Vec<QuadTreeLeaf>) {
+
+    pub fn query(
+        arc: Arc<Mutex<QuadTreeBranch>>,
+        area: QuadTreeBounds,
+        results: &mut Vec<QuadTreeLeaf>,
+    ) {
         let mut list = Vec::new();
 
         let this = arc.lock().unwrap();
