@@ -7,35 +7,35 @@ use std::{
     },
 };
 
-use actr_task::task_manager::{Task, TaskManager};
+use actr_task::task_manager::{TaskManager};
 
-use super::{quad_tree_bounds::QuadTreeBounds, quad_tree_leaf::QuadTreeLeaf};
+use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_leaf_ts::QuadTreeLeafTs};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-pub struct QuadTreeBranch {
+pub struct QuadTreeBranchTs {
     pub identity: u64,
     pub root: bool,
-    pub bounds: QuadTreeBounds,
-    pub items: Vec<QuadTreeLeaf>,
-    pub stuck: Vec<QuadTreeLeaf>,
-    pub branches: Vec<Option<Arc<Mutex<QuadTreeBranch>>>>,
-    pub parent: Option<Weak<Mutex<QuadTreeBranch>>>,
+    pub bounds: QuadTreeBoundsTs,
+    pub items: Vec<QuadTreeLeafTs>,
+    pub stuck: Vec<QuadTreeLeafTs>,
+    pub branches: Vec<Option<Arc<Mutex<QuadTreeBranchTs>>>>,
+    pub parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
 }
 
-impl QuadTreeBranch {
+impl QuadTreeBranchTs {
     pub fn new(
         root: bool,
         x: i64,
         y: i64,
         size: i64,
-        parent: Option<Weak<Mutex<QuadTreeBranch>>>,
+        parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
     ) -> Self {
         
         Self {
             identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
             root,
-            bounds: QuadTreeBounds::new(x, y, size, size),
+            bounds: QuadTreeBoundsTs::new(x, y, size, size),
             items: Vec::with_capacity(2),
             stuck: Vec::new(),
             branches: (0..4).map(|_|None).collect::<Vec<_>>(),
@@ -43,7 +43,7 @@ impl QuadTreeBranch {
         }
     }
 
-    fn index(&self, other: QuadTreeBounds) -> isize {
+    fn index(&self, other: QuadTreeBoundsTs) -> isize {
         // 0 1
         // 3 2
 
@@ -68,7 +68,7 @@ impl QuadTreeBranch {
         return -1;
     }
 
-    pub fn remove(mut leaf: QuadTreeLeaf) -> bool {
+    pub fn remove(mut leaf: QuadTreeLeafTs) -> bool {
         let strong = leaf.get_parent();
         if strong.is_none() {
             return false;
@@ -126,7 +126,7 @@ impl QuadTreeBranch {
         return result;
     }
 
-    fn remove_child(self_pointer: Arc<Mutex<QuadTreeBranch>>, child_identity: u64, level: usize) {
+    fn remove_child(self_pointer: Arc<Mutex<QuadTreeBranchTs>>, child_identity: u64, level: usize) {
         let mut this = self_pointer.lock().unwrap();
 
         let mut branch_count = 0;
@@ -165,10 +165,10 @@ impl QuadTreeBranch {
         }
         let next = strong.unwrap();
         drop(this);
-        QuadTreeBranch::remove_child(next, identity, level + 1);
+        QuadTreeBranchTs::remove_child(next, identity, level + 1);
     }
 
-    pub fn climb(arc: Arc<Mutex<QuadTreeBranch>>, list: &mut Vec<QuadTreeBounds>) {
+    pub fn climb(arc: Arc<Mutex<QuadTreeBranchTs>>, list: &mut Vec<QuadTreeBoundsTs>) {
         let this = arc.lock().unwrap();
         list.push(this.bounds);
         for i in 0..4 {
@@ -177,14 +177,14 @@ impl QuadTreeBranch {
             }
             let branch = this.branches[i].clone();
 
-            QuadTreeBranch::climb(branch.unwrap(), list);
+            QuadTreeBranchTs::climb(branch.unwrap(), list);
         }
     }
     pub fn task_query(
         &self,
-        area: QuadTreeBounds,
+        area: QuadTreeBoundsTs,
         task_manager: TaskManager,
-        results: Sender<QuadTreeLeaf>,
+        results: Sender<QuadTreeLeafTs>,
     ) {
         if !self.bounds.intersects(area) {
             return;
@@ -218,9 +218,9 @@ impl QuadTreeBranch {
     }
 
     pub fn query(
-        arc: Arc<Mutex<QuadTreeBranch>>,
-        area: QuadTreeBounds,
-        results: &mut Vec<QuadTreeLeaf>,
+        arc: Arc<Mutex<QuadTreeBranchTs>>,
+        area: QuadTreeBoundsTs,
+        results: &mut Vec<QuadTreeLeafTs>,
     ) {
         let mut list = Vec::new();
 
@@ -257,12 +257,12 @@ impl QuadTreeBranch {
         }
     }
 
-    pub fn grow(&mut self, zarc: Arc<Mutex<QuadTreeBranch>>) {
+    pub fn grow(&mut self, zarc: Arc<Mutex<QuadTreeBranchTs>>) {
         let size = self.bounds.w;
         let half = size / 2;
 
         if !self.branches[0].is_none() {
-            let mut new_tree = QuadTreeBranch::new(
+            let mut new_tree = QuadTreeBranchTs::new(
                 false,
                 self.bounds.x - half,
                 self.bounds.y - half,
@@ -274,7 +274,7 @@ impl QuadTreeBranch {
             self.branches[0] = Some(Arc::new(Mutex::new(new_tree)));
         }
         if !self.branches[1].is_none() {
-            let mut new_tree = QuadTreeBranch::new(
+            let mut new_tree = QuadTreeBranchTs::new(
                 false,
                 self.bounds.x + half,
                 self.bounds.y - half,
@@ -285,7 +285,7 @@ impl QuadTreeBranch {
             self.branches[1] = Some(Arc::new(Mutex::new(new_tree)));
         }
         if !self.branches[2].is_none() {
-            let mut new_tree = QuadTreeBranch::new(
+            let mut new_tree = QuadTreeBranchTs::new(
                 false,
                 self.bounds.x + half,
                 self.bounds.y + half,
@@ -296,7 +296,7 @@ impl QuadTreeBranch {
             self.branches[2] = Some(Arc::new(Mutex::new(new_tree)));
         }
         if !self.branches[3].is_none() {
-            let mut new_tree = QuadTreeBranch::new(
+            let mut new_tree = QuadTreeBranchTs::new(
                 false,
                 self.bounds.x - half,
                 self.bounds.y + half,
@@ -313,7 +313,7 @@ impl QuadTreeBranch {
         self.bounds.h += size;
     }
 
-    pub fn insert(arc: Arc<Mutex<QuadTreeBranch>>, mut new_leaf: QuadTreeLeaf) {
+    pub fn insert(arc: Arc<Mutex<QuadTreeBranchTs>>, mut new_leaf: QuadTreeLeafTs) {
         let mut this = arc.lock().unwrap();
 
         if this.root {
@@ -322,7 +322,7 @@ impl QuadTreeBranch {
                     break;
                 }
 
-                QuadTreeBranch::grow(&mut *this, arc.clone());
+                QuadTreeBranchTs::grow(&mut *this, arc.clone());
             }
         }
         new_leaf.parent = Some(Arc::downgrade(&arc));
@@ -355,16 +355,16 @@ impl QuadTreeBranch {
                 } else if 3 == index {
                     y += size;
                 }
-                let new_branch = QuadTreeBranch::new(false, x, y, size, Some(Arc::downgrade(&arc)));
+                let new_branch = QuadTreeBranchTs::new(false, x, y, size, Some(Arc::downgrade(&arc)));
                 this.branches[index as usize] = Some(Arc::new(Mutex::new(new_branch)));
             }
             let branch_arc = this.branches[index as usize].clone().unwrap();
-            QuadTreeBranch::insert(branch_arc, leaf);
+            QuadTreeBranchTs::insert(branch_arc, leaf);
         }
     }
 }
 
-fn drop_helper(tree: &mut QuadTreeBranch, stack: &mut Vec<Arc<Mutex<QuadTreeBranch>>>) {
+fn drop_helper(tree: &mut QuadTreeBranchTs, stack: &mut Vec<Arc<Mutex<QuadTreeBranchTs>>>) {
     for i in 0..4 {
         if tree.branches[i].is_none() {
             continue;
@@ -372,7 +372,7 @@ fn drop_helper(tree: &mut QuadTreeBranch, stack: &mut Vec<Arc<Mutex<QuadTreeBran
         stack.push(mem::replace(&mut tree.branches[i], None).unwrap());
     }
 }
-impl Drop for QuadTreeBranch {
+impl Drop for QuadTreeBranchTs {
     fn drop(&mut self) {
         let mut stack = Vec::new();
         drop_helper(self, &mut stack);

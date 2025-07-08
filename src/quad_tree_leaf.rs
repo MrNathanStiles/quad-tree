@@ -1,37 +1,40 @@
-use std::sync::{
-    Arc, Mutex, Weak,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::{cell::RefCell, rc::Weak, sync::atomic::{AtomicU64, Ordering}};
 
-use super::{quad_tree_bounds::QuadTreeBounds, quad_tree_branch::QuadTreeBranch};
+use crate::{quad_tree::QuadTree, quad_tree_bounds::QuadTreeBounds};
 
-
-static SEQUENCE: AtomicUsize = AtomicUsize::new(1);
-
-#[derive(Clone)]
+static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub struct QuadTreeLeaf {
-    pub identity: usize,
+    pub identity: u64,
+    pub item: usize,
     pub bounds: QuadTreeBounds,
-    pub parent: Option<Weak<Mutex<QuadTreeBranch>>>,
+    pub parent: Weak<RefCell<QuadTree>>,
 }
 
 impl QuadTreeLeaf {
-    pub fn new(bounds: QuadTreeBounds, parent: Option<Weak<Mutex<QuadTreeBranch>>>) -> Self {
-        Self {
-            bounds,
-            parent,
-            identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
-        }
+    pub fn new(item: usize, bounds: QuadTreeBounds, parent: Weak<RefCell<QuadTree>>) -> Self {
+        let identity = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        Self { item, bounds, parent, identity }
     }
+}
 
-    pub fn remove(self) -> bool {
-        QuadTreeBranch::remove(self)
+impl Clone for QuadTreeLeaf {
+    fn clone(&self) -> Self {
+        
+        Self { item: self.item.clone(), bounds: self.bounds.clone(), parent: self.parent.clone(), identity: self.identity }
     }
+}
+pub struct QuadTreeResult {
+    pub item: usize,
+    pub bounds: QuadTreeBounds,
+    pub leaf: QuadTreeLeaf,
+}
 
-    pub fn get_parent(&self) -> Option<Arc<Mutex<QuadTreeBranch>>> {
-        match &self.parent {
-            Some(parent) => parent.upgrade(),
-            _ => None
+impl QuadTreeResult {
+    pub fn new(leaf: &QuadTreeLeaf) -> QuadTreeResult {
+        QuadTreeResult {
+            bounds: leaf.bounds,
+            item: leaf.item,
+            leaf: leaf.clone(),
         }
     }
 }

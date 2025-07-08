@@ -1,20 +1,26 @@
 use std::fmt::Display;
 
-pub struct QuadTreeBounds {
+
+#[derive(Copy)]
+pub struct QuadTreeBoundsTs {
     pub x: i64,
     pub y: i64,
     pub w: i64,
     pub h: i64,
 }
-impl Clone for QuadTreeBounds {
+
+impl Clone for QuadTreeBoundsTs {
     fn clone(&self) -> Self {
-        Self { x: self.x.clone(), y: self.y.clone(), w: self.w.clone(), h: self.h.clone() }
+        Self {
+            x: self.x,
+            y: self.y,
+            w: self.w,
+            h: self.h,
+        }
     }
 }
-impl Copy for QuadTreeBounds {
 
-}
-impl Display for QuadTreeBounds {
+impl Display for QuadTreeBoundsTs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("qtb x: ").unwrap();
         f.write_str(&self.x.to_string()).unwrap();
@@ -27,29 +33,20 @@ impl Display for QuadTreeBounds {
     }
 }
 
-
-impl QuadTreeBounds {
+impl QuadTreeBoundsTs {
     pub fn new(x: i64, y: i64, w: i64, h: i64) -> Self {
-        println!("qtb {} {} {} {}", x, y, w, h);
         Self { x, y, w, h }
     }
-    pub fn contains(&self, other: &QuadTreeBounds) -> bool {
+    pub fn contains(&self, other: QuadTreeBoundsTs) -> bool {
         self.x <= other.x
             && self.x + self.w >= other.x + other.w
             && self.y <= other.y
             && self.y + self.h >= other.y + other.h
     }
-    pub fn intersects(&self, other: &QuadTreeBounds) -> bool {
-        /*
-            RectA.Left < RectB.Right &&
-            RectA.Right > RectB.Left &&
-            RectA.Top > RectB.Bottom &&
-            RectA.Bottom < RectB.Top
-        */
+    pub fn intersects(&self, other: QuadTreeBoundsTs) -> bool {
         if self.x >= other.x + other.w {
             return false;
         }
-
         if other.x >= self.x + self.w {
             return false;
         }
