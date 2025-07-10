@@ -46,23 +46,23 @@ impl QuadTree {
         let ymid = self.bounds.y + (self.bounds.h / 2);
         let xmid = self.bounds.x + (self.bounds.w / 2);
 
-        if (bounds.y + bounds.h <= ymid) {
+        if bounds.y + bounds.h <= ymid {
             // top half
-            if (bounds.x + bounds.w <= xmid) {
+            if bounds.x + bounds.w <= xmid {
                 // left half
                 return 0;
             }
-            if (bounds.x >= xmid) {
+            if bounds.x >= xmid {
                 // right half
                 return 1;
             }
-        } else if (bounds.y >= ymid) {
+        } else if bounds.y >= ymid {
             // bottom half
-            if (bounds.x + bounds.w <= xmid) {
+            if bounds.x + bounds.w <= xmid {
                 // left half
                 return 3;
             }
-            if (bounds.x >= xmid) {
+            if bounds.x >= xmid {
                 // right half
                 return 2;
             }
@@ -267,7 +267,7 @@ impl QuadTree {
 
     pub fn insert(
         tree_rc: Rc<RefCell<QuadTree>>,
-        item: usize,
+        item: u64,
         bounds: QuadTreeBounds,
         level: usize,
     ) {

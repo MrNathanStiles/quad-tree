@@ -30,7 +30,6 @@ impl Display for QuadTreeBounds {
 
 impl QuadTreeBounds {
     pub fn new(x: i64, y: i64, w: i64, h: i64) -> Self {
-        println!("qtb {} {} {} {}", x, y, w, h);
         Self { x, y, w, h }
     }
     pub fn contains(&self, other: &QuadTreeBounds) -> bool {

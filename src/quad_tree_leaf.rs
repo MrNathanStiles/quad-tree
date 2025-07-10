@@ -5,13 +5,13 @@ use crate::{quad_tree::QuadTree, quad_tree_bounds::QuadTreeBounds};
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub struct QuadTreeLeaf {
     pub identity: u64,
-    pub item: usize,
+    pub item: u64,
     pub bounds: QuadTreeBounds,
     pub parent: Weak<RefCell<QuadTree>>,
 }
 
 impl QuadTreeLeaf {
-    pub fn new(item: usize, bounds: QuadTreeBounds, parent: Weak<RefCell<QuadTree>>) -> Self {
+    pub fn new(item: u64, bounds: QuadTreeBounds, parent: Weak<RefCell<QuadTree>>) -> Self {
         let identity = SEQUENCE.fetch_add(1, Ordering::Relaxed);
         Self { item, bounds, parent, identity }
     }
@@ -24,7 +24,7 @@ impl Clone for QuadTreeLeaf {
     }
 }
 pub struct QuadTreeResult {
-    pub item: usize,
+    pub item: u64,
     pub bounds: QuadTreeBounds,
     pub leaf: QuadTreeLeaf,
 }
