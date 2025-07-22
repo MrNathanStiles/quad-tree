@@ -1,13 +1,13 @@
+use actr_task::task_manager::TaskManager;
+use parking_lot::Mutex;
 use std::{
     mem,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Weak,
         atomic::{AtomicU64, Ordering},
         mpsc::Sender,
     },
 };
-
-use actr_task::task_manager::{TaskManager};
 
 use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_leaf_ts::QuadTreeLeafTs};
 
@@ -31,14 +31,13 @@ impl QuadTreeBranchTs {
         size: i64,
         parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
     ) -> Self {
-        
         Self {
             identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
             root,
             bounds: QuadTreeBoundsTs::new(x, y, size, size),
             items: Vec::with_capacity(2),
             stuck: Vec::new(),
-            branches: (0..4).map(|_|None).collect::<Vec<_>>(),
+            branches: (0..4).map(|_| None).collect::<Vec<_>>(),
             parent: parent,
         }
     }
@@ -75,7 +74,7 @@ impl QuadTreeBranchTs {
         }
 
         let parent_mutex = strong.unwrap().clone();
-        let mut parent = parent_mutex.lock().unwrap();
+        let mut parent = parent_mutex.lock();
 
         leaf.parent = None;
 
@@ -127,7 +126,7 @@ impl QuadTreeBranchTs {
     }
 
     fn remove_child(self_pointer: Arc<Mutex<QuadTreeBranchTs>>, child_identity: u64, level: usize) {
-        let mut this = self_pointer.lock().unwrap();
+        let mut this = self_pointer.lock();
 
         let mut branch_count = 0;
         for i in 0..4 {
@@ -137,8 +136,7 @@ impl QuadTreeBranchTs {
 
             let branch_option = this.branches[i].clone();
             let branch_result = branch_option.unwrap();
-            let branch_lock_result = branch_result.lock();
-            let branch = branch_lock_result.unwrap();
+            let branch = branch_result.lock();
             if branch.identity == child_identity {
                 this.branches[i] = None;
             } else {
@@ -169,7 +167,7 @@ impl QuadTreeBranchTs {
     }
 
     pub fn climb(arc: Arc<Mutex<QuadTreeBranchTs>>, list: &mut Vec<QuadTreeBoundsTs>) {
-        let this = arc.lock().unwrap();
+        let this = arc.lock();
         list.push(this.bounds);
         for i in 0..4 {
             if this.branches[i].is_none() {
@@ -199,7 +197,7 @@ impl QuadTreeBranchTs {
             let task_manager_clone = task_manager.clone();
 
             let ztask = move || {
-                let branch = branch_mutex.lock().unwrap();
+                let branch = branch_mutex.lock();
                 branch.task_query(area, task_manager_clone, results_clone);
             };
             task_manager.work(ztask).unwrap();
@@ -224,20 +222,22 @@ impl QuadTreeBranchTs {
     ) {
         let mut list = Vec::new();
 
-        let this = arc.lock().unwrap();
-        if area.intersects(this.bounds) {
-            list.push(arc.clone());
+        {
+            let this = arc.lock();
+            if area.intersects(this.bounds) {
+                list.push(arc.clone());
+            }
+            drop(this);
         }
-        drop(this);
         while list.len() > 0 {
             let arc = list.pop().unwrap();
-            let tree = arc.lock().unwrap();
+            let tree = arc.lock();
             for i in 0..4 {
                 if tree.branches[i].is_none() {
                     continue;
                 }
                 let branch_option = tree.branches[i].clone().unwrap();
-                let branch = branch_option.lock().unwrap();
+                let branch = branch_option.lock();
                 if area.intersects(branch.bounds) {
                     drop(branch);
                     list.push(branch_option);
@@ -314,7 +314,7 @@ impl QuadTreeBranchTs {
     }
 
     pub fn insert(arc: Arc<Mutex<QuadTreeBranchTs>>, mut new_leaf: QuadTreeLeafTs) {
-        let mut this = arc.lock().unwrap();
+        let mut this = arc.lock();
 
         if this.root {
             loop {
@@ -336,13 +336,14 @@ impl QuadTreeBranchTs {
 
             let index = this.index(leaf.bounds);
 
-            if index < 0 {
+            if index < 0 || this.bounds.w < 16 {
                 leaf.parent = Some(Arc::downgrade(&arc));
                 this.stuck.push(leaf);
                 continue;
             }
 
-            if this.branches[index as usize].is_none() {
+            let branch_option = this.branches.get(index as usize).unwrap();
+            let branch_arc = if branch_option.is_none() {
                 let size = this.bounds.w / 2;
                 let mut x = this.bounds.x;
                 let mut y = this.bounds.y;
@@ -355,10 +356,19 @@ impl QuadTreeBranchTs {
                 } else if 3 == index {
                     y += size;
                 }
-                let new_branch = QuadTreeBranchTs::new(false, x, y, size, Some(Arc::downgrade(&arc)));
-                this.branches[index as usize] = Some(Arc::new(Mutex::new(new_branch)));
-            }
-            let branch_arc = this.branches[index as usize].clone().unwrap();
+                let new_branch = Arc::new(Mutex::new(QuadTreeBranchTs::new(
+                    false,
+                    x,
+                    y,
+                    size,
+                    Some(Arc::downgrade(&arc)),
+                )));
+                this.branches[index as usize] = Some(new_branch.clone());
+                new_branch
+            } else {
+                branch_option.clone().unwrap()
+            };
+
             QuadTreeBranchTs::insert(branch_arc, leaf);
         }
     }
@@ -383,7 +393,7 @@ impl Drop for QuadTreeBranchTs {
                 break;
             }
             let arc = tree_option.unwrap();
-            let mut tree = arc.lock().unwrap();
+            let mut tree = arc.lock();
             drop_helper(&mut tree, &mut stack);
         }
     }

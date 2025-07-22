@@ -1,27 +1,30 @@
-use std::sync::{
-    Arc, Mutex, Weak,
-    atomic::{AtomicUsize, Ordering},
+use std::{ sync::{
+    atomic::{AtomicU64, Ordering}, Arc, Weak
+}, fmt::Display
 };
+
+use parking_lot::Mutex;
 
 use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_branch_ts::QuadTreeBranchTs};
 
 
 
-static SEQUENCE: AtomicUsize = AtomicUsize::new(1);
+//static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 pub struct QuadTreeLeafTs {
-    pub identity: usize,
+    pub identity: u64,
     pub bounds: QuadTreeBoundsTs,
     pub parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
 }
 
 impl QuadTreeLeafTs {
-    pub fn new(bounds: QuadTreeBoundsTs, parent: Option<Weak<Mutex<QuadTreeBranchTs>>>) -> Self {
+    pub fn new(identity: u64, bounds: QuadTreeBoundsTs, parent: Option<Weak<Mutex<QuadTreeBranchTs>>>) -> Self {
         Self {
+            identity,
             bounds,
             parent,
-            identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            
         }
     }
 
@@ -36,3 +39,14 @@ impl QuadTreeLeafTs {
         }
     }
 }
+
+impl Display for QuadTreeLeafTs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("leaf identity: ").unwrap();
+        f.write_str(&self.identity.to_string()).unwrap();
+        f.write_str(", bounds: ").unwrap();
+        f.write_str(&self.bounds.to_string())
+        
+    }
+}
+
