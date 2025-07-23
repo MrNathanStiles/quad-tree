@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 actr-task= { path = "../actr-task" }
+parking_lot = "0.12.4"

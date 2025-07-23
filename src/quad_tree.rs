@@ -109,7 +109,6 @@ impl QuadTree {
     
     fn _actr_quad_tree_remove_tree(child_rc: Rc<RefCell<QuadTree>>, level: usize) {
 
-        println!("_actr_quad_tree_remove_tree {}", level);
 
         let child_ref = child_rc.as_ref();
         let child_borrow = child_ref.borrow();
