@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     quad_tree_bounds::QuadTreeBounds,
-    quad_tree_leaf::{QuadTreeLeaf, QuadTreeResult},
+    quad_tree_leaf::{QuadTreeLeaf},
 };
 
 pub struct QuadTree {
@@ -70,12 +70,13 @@ impl QuadTree {
         return -1;
     }
 
-    pub fn remove(leaf: &QuadTreeLeaf) {
+    pub fn remove(leaf: &QuadTreeLeaf) ->bool {
+        let mut removed = false;
         let foo = leaf.parent.upgrade().unwrap();
         {
             let mut tree = foo.borrow_mut();
 
-            let mut removed = false;
+            
 
             tree.items.retain(|l| {
                 let retain = l.identity != leaf.identity;
@@ -86,24 +87,31 @@ impl QuadTree {
             });
 
             if !removed {
-                tree.stuck.retain(|l| l.identity != leaf.identity);
+                tree.stuck.retain(|l| {
+                    let retain = l.identity != leaf.identity;
+                    if !retain {
+                        removed = true;
+                    }
+                    retain
+                });
             }
 
             if tree.items.len() > 0 {
-                return;
+                return removed;
             }
             if tree.stuck.len() > 0 {
-                return;
+                return removed;
             }
 
             for branch in tree.branches.iter() {
                 if branch.is_some() {
-                    return;
+                    return removed;
                 }
             }
         }
         let foo = leaf.parent.upgrade().unwrap();
         QuadTree::_actr_quad_tree_remove_tree(foo, 0);
+        removed
     }
 
     
@@ -162,7 +170,7 @@ impl QuadTree {
     pub fn query(
         self_rc: Rc<RefCell<QuadTree>>,
         area: QuadTreeBounds,
-        results: &mut Vec<QuadTreeResult>,
+        results: &mut Vec<QuadTreeLeaf>,
     ) {
         let mut list = Vec::new();
 
@@ -195,14 +203,14 @@ impl QuadTree {
             for leaf in tree_borrow.items.iter() {
                 if area.intersects(&leaf.bounds) {
                     //QuadTree::log(format!("area {} intersects {}", area, &leaf.bounds));
-                    results.push(QuadTreeResult::new(&leaf));
+                    results.push(leaf.clone());
                 }
             }
 
             for leaf in tree_borrow.stuck.iter() {
                 if area.intersects(&leaf.bounds) {
                     //QuadTree::log(format!("area {} intersects {}", area, &leaf.bounds));
-                    results.push(QuadTreeResult::new(&leaf));
+                    results.push(leaf.clone());
                 }
             }
         }
@@ -318,7 +326,7 @@ impl QuadTree {
 
             let index = this.index(&leaf.bounds);
 
-            if index < 0 {
+            if index < 0 || this.bounds.w < 16 {
                 leaf.parent = Rc::downgrade(&tree_rc);
                 this.stuck.push(leaf);
                 continue;
@@ -351,7 +359,7 @@ impl QuadTree {
             let foo = &this.branches[index as usize];
             let bar = foo.clone().unwrap();
 
-            QuadTree::insert(bar, leaf.item, leaf.bounds, level + 1);
+            QuadTree::insert(bar, leaf.identity, leaf.bounds, level + 1);
         }
         //QuadTree::log(format!("done inserting level: {level}"));
     }
