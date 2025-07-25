@@ -274,7 +274,7 @@ impl QuadTree {
 
     pub fn insert(
         tree_rc: Rc<RefCell<QuadTree>>,
-        item: u64,
+        item: i64,
         bounds: QuadTreeBounds,
         level: usize,
     ) {
