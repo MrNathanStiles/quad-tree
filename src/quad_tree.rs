@@ -40,6 +40,15 @@ impl QuadTree {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.items.clear();
+        self.stuck.clear();
+        self.branches.clear();
+        for i in 0..4 {
+            self.branches.push(None)
+        }
+    }
+
     fn index(&self, bounds: &QuadTreeBounds) -> isize {
         // 0 1
         // 3 2
