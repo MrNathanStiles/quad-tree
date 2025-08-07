@@ -3,7 +3,7 @@ use std::{
     sync::{ Arc, Weak},
 };
 
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_branch_ts::QuadTreeBranchTs};
 
@@ -13,14 +13,14 @@ use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_branch_ts::QuadTree
 pub struct QuadTreeLeafTs {
     pub identity: i64,
     pub bounds: QuadTreeBoundsTs,
-    pub parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
+    pub parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
 }
 
 impl QuadTreeLeafTs {
     pub fn new(
         identity: i64,
         bounds: QuadTreeBoundsTs,
-        parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
+        parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
     ) -> Self {
         Self {
             identity,
@@ -33,7 +33,7 @@ impl QuadTreeLeafTs {
         QuadTreeBranchTs::remove(self)
     }
 
-    pub fn get_parent(&self) -> Option<Arc<Mutex<QuadTreeBranchTs>>> {
+    pub fn get_parent(&self) -> Option<Arc<RwLock<QuadTreeBranchTs>>> {
         match &self.parent {
             Some(parent) => parent.upgrade(),
             _ => None,

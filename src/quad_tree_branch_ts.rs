@@ -1,5 +1,5 @@
 use actr_task::task_manager::TaskManager;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use std::{
     mem,
     sync::{
@@ -19,8 +19,8 @@ pub struct QuadTreeBranchTs {
     pub bounds: QuadTreeBoundsTs,
     pub items: Vec<QuadTreeLeafTs>,
     pub stuck: Vec<QuadTreeLeafTs>,
-    pub branches: Vec<Option<Arc<Mutex<QuadTreeBranchTs>>>>,
-    pub parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
+    pub branches: Vec<Option<Arc<RwLock<QuadTreeBranchTs>>>>,
+    pub parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
 }
 
 impl QuadTreeBranchTs {
@@ -29,7 +29,18 @@ impl QuadTreeBranchTs {
         x: i64,
         y: i64,
         size: i64,
-        parent: Option<Weak<Mutex<QuadTreeBranchTs>>>,
+        parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
+    ) -> Arc<RwLock<Self>> {
+    
+        Arc::new(RwLock::new(Self::new_unlocked(root, x, y, size, parent)))
+    }
+
+    
+    fn new_unlocked(root: bool,
+        x: i64,
+        y: i64,
+        size: i64,
+        parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
     ) -> Self {
         Self {
             identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
@@ -74,7 +85,7 @@ impl QuadTreeBranchTs {
         }
 
         let parent_mutex = strong.unwrap().clone();
-        let mut parent = parent_mutex.lock();
+        let mut parent = parent_mutex.write();
 
         leaf.parent = None;
 
@@ -125,8 +136,8 @@ impl QuadTreeBranchTs {
         return result;
     }
 
-    fn remove_child(self_pointer: Arc<Mutex<QuadTreeBranchTs>>, child_identity: u64, level: usize) {
-        let mut this = self_pointer.lock();
+    fn remove_child(self_pointer: Arc<RwLock<QuadTreeBranchTs>>, child_identity: u64, level: usize) {
+        let mut this = self_pointer.write();
 
         let mut branch_count = 0;
         for i in 0..4 {
@@ -136,7 +147,7 @@ impl QuadTreeBranchTs {
 
             let branch_option = this.branches[i].clone();
             let branch_result = branch_option.unwrap();
-            let branch = branch_result.lock();
+            let branch = branch_result.read();
             if branch.identity == child_identity {
                 this.branches[i] = None;
             } else {
@@ -166,8 +177,8 @@ impl QuadTreeBranchTs {
         QuadTreeBranchTs::remove_child(next, identity, level + 1);
     }
 
-    pub fn climb(arc: Arc<Mutex<QuadTreeBranchTs>>, list: &mut Vec<QuadTreeBoundsTs>) {
-        let this = arc.lock();
+    pub fn climb(arc: Arc<RwLock<QuadTreeBranchTs>>, list: &mut Vec<QuadTreeBoundsTs>) {
+        let this = arc.read();
         list.push(this.bounds);
         for i in 0..4 {
             if this.branches[i].is_none() {
@@ -197,7 +208,7 @@ impl QuadTreeBranchTs {
             let task_manager_clone = task_manager.clone();
 
             let ztask = move || {
-                let branch = branch_mutex.lock();
+                let branch = branch_mutex.read();
                 branch.task_query(area, task_manager_clone, results_clone);
             };
             task_manager.work(ztask).unwrap();
@@ -216,28 +227,26 @@ impl QuadTreeBranchTs {
     }
 
     pub fn query(
-        arc: Arc<Mutex<QuadTreeBranchTs>>,
+        arc: Arc<RwLock<QuadTreeBranchTs>>,
         area: QuadTreeBoundsTs,
         results: &mut Vec<QuadTreeLeafTs>,
     ) {
         let mut list = Vec::new();
-
         {
-            let this = arc.lock();
+            let this = arc.read();
             if area.intersects(this.bounds) {
                 list.push(arc.clone());
             }
-            drop(this);
         }
         while list.len() > 0 {
             let arc = list.pop().unwrap();
-            let tree = arc.lock();
+            let tree = arc.read();
             for i in 0..4 {
                 if tree.branches[i].is_none() {
                     continue;
                 }
                 let branch_option = tree.branches[i].clone().unwrap();
-                let branch = branch_option.lock();
+                let branch = branch_option.read();
                 if area.intersects(branch.bounds) {
                     drop(branch);
                     list.push(branch_option);
@@ -257,24 +266,23 @@ impl QuadTreeBranchTs {
         }
     }
 
-    pub fn grow(&mut self, zarc: Arc<Mutex<QuadTreeBranchTs>>) {
+    fn grow(&mut self, zarc: Arc<RwLock<QuadTreeBranchTs>>) {
         let size = self.bounds.w;
         let half = size / 2;
 
         if !self.branches[0].is_none() {
-            let mut new_tree = QuadTreeBranchTs::new(
+            let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x - half,
                 self.bounds.y - half,
                 size,
                 Some(Arc::downgrade(&zarc)),
             );
-
             new_tree.branches[2] = self.branches[0].clone();
-            self.branches[0] = Some(Arc::new(Mutex::new(new_tree)));
+            self.branches[0] = Some(Arc::new(RwLock::new(new_tree)));
         }
         if !self.branches[1].is_none() {
-            let mut new_tree = QuadTreeBranchTs::new(
+            let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x + half,
                 self.bounds.y - half,
@@ -282,10 +290,10 @@ impl QuadTreeBranchTs {
                 Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[3] = self.branches[1].clone();
-            self.branches[1] = Some(Arc::new(Mutex::new(new_tree)));
+            self.branches[1] = Some(Arc::new(RwLock::new(new_tree)));
         }
         if !self.branches[2].is_none() {
-            let mut new_tree = QuadTreeBranchTs::new(
+            let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x + half,
                 self.bounds.y + half,
@@ -293,10 +301,10 @@ impl QuadTreeBranchTs {
                 Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[0] = self.branches[2].clone();
-            self.branches[2] = Some(Arc::new(Mutex::new(new_tree)));
+            self.branches[2] = Some(Arc::new(RwLock::new(new_tree)));
         }
         if !self.branches[3].is_none() {
-            let mut new_tree = QuadTreeBranchTs::new(
+            let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x - half,
                 self.bounds.y + half,
@@ -304,7 +312,7 @@ impl QuadTreeBranchTs {
                 Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[1] = self.branches[3].clone();
-            self.branches[3] = Some(Arc::new(Mutex::new(new_tree)));
+            self.branches[3] = Some(Arc::new(RwLock::new(new_tree)));
         }
 
         self.bounds.x -= half;
@@ -313,8 +321,8 @@ impl QuadTreeBranchTs {
         self.bounds.h += size;
     }
 
-    pub fn insert(arc: Arc<Mutex<QuadTreeBranchTs>>, mut new_leaf: QuadTreeLeafTs) {
-        let mut this = arc.lock();
+    pub fn insert(arc: Arc<RwLock<QuadTreeBranchTs>>, mut new_leaf: QuadTreeLeafTs) {
+        let mut this = arc.write();
 
         if this.root {
             loop {
@@ -356,13 +364,13 @@ impl QuadTreeBranchTs {
                 } else if 3 == index {
                     y += size;
                 }
-                let new_branch = Arc::new(Mutex::new(QuadTreeBranchTs::new(
+                let new_branch = QuadTreeBranchTs::new(
                     false,
                     x,
                     y,
                     size,
                     Some(Arc::downgrade(&arc)),
-                )));
+                );
                 this.branches[index as usize] = Some(new_branch.clone());
                 new_branch
             } else {
@@ -374,7 +382,7 @@ impl QuadTreeBranchTs {
     }
 }
 
-fn drop_helper(tree: &mut QuadTreeBranchTs, stack: &mut Vec<Arc<Mutex<QuadTreeBranchTs>>>) {
+fn drop_helper(tree: &mut QuadTreeBranchTs, stack: &mut Vec<Arc<RwLock<QuadTreeBranchTs>>>) {
     for i in 0..4 {
         if tree.branches[i].is_none() {
             continue;
@@ -393,7 +401,7 @@ impl Drop for QuadTreeBranchTs {
                 break;
             }
             let arc = tree_option.unwrap();
-            let mut tree = arc.lock();
+            let mut tree = arc.write();
             drop_helper(&mut tree, &mut stack);
         }
     }

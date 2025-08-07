@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+
 use crate::{quad_tree_branch_ts::QuadTreeBranchTs, quad_tree_leaf_ts::QuadTreeLeafTs};
 
 
 
 pub struct QuadTreeTs {
-    branch: QuadTreeBranchTs,
+    branch: Arc<RwLock<QuadTreeBranchTs>>,
 }
 
 enum QueryResult {
