@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    sync::{ Arc, Weak},
+    sync::{ atomic::{AtomicU64, Ordering}, Arc, Weak},
 };
 
 use parking_lot::RwLock;
@@ -8,22 +8,29 @@ use parking_lot::RwLock;
 use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_branch_ts::QuadTreeBranchTs};
 
 //static SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
-pub struct QuadTreeLeafTs {
-    pub identity: i64,
+pub struct QuadTreeLeafTs<T>
+where T: Clone + Send + Sync + 'static
+{
+    pub(crate) identity: u64,
+    pub item: T,
     pub bounds: QuadTreeBoundsTs,
-    pub parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
+    pub parent: Option<Weak<RwLock<QuadTreeBranchTs<T>>>>,
 }
 
-impl QuadTreeLeafTs {
+impl<T> QuadTreeLeafTs<T>
+where T: Clone + Send + Sync + 'static
+{
     pub fn new(
-        identity: i64,
+        item: T,
         bounds: QuadTreeBoundsTs,
-        parent: Option<Weak<RwLock<QuadTreeBranchTs>>>,
+        parent: Option<Weak<RwLock<QuadTreeBranchTs<T>>>>,
     ) -> Self {
         Self {
-            identity,
+            identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            item,
             bounds,
             parent,
         }
@@ -33,7 +40,7 @@ impl QuadTreeLeafTs {
         QuadTreeBranchTs::remove(self)
     }
 
-    pub fn get_parent(&self) -> Option<Arc<RwLock<QuadTreeBranchTs>>> {
+    pub fn get_parent(&self) -> Option<Arc<RwLock<QuadTreeBranchTs<T>>>> {
         match &self.parent {
             Some(parent) => parent.upgrade(),
             _ => None,
@@ -41,11 +48,10 @@ impl QuadTreeLeafTs {
     }
 }
 
-impl Display for QuadTreeLeafTs {
+impl<T> Display for QuadTreeLeafTs<T>
+where T: Clone + Send + Sync
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("leaf identity: ").unwrap();
-        f.write_str(&self.identity.to_string()).unwrap();
-        f.write_str(", bounds: ").unwrap();
-        f.write_str(&self.bounds.to_string())
+        f.write_str(&format!("leaf {}", &self.bounds))
     }
 }
