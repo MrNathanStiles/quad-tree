@@ -44,7 +44,7 @@ impl QuadTree {
         self.items.clear();
         self.stuck.clear();
         self.branches.clear();
-        for i in 0..4 {
+        for _ in 0..4 {
             self.branches.push(None)
         }
     }
