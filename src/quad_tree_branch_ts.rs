@@ -1,29 +1,36 @@
 use actr_task::task_manager::TaskManager;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::{
     mem,
     sync::{
-        atomic::{ AtomicU64, Ordering}, mpsc::Sender, Arc, Weak
+        Arc, Weak,
+        atomic::{AtomicU64, Ordering},
+        mpsc::Sender,
     },
 };
 
 use crate::{quad_tree_bounds_ts::QuadTreeBoundsTs, quad_tree_leaf_ts::QuadTreeLeafTs};
 
+
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct QuadTreeBranchTs<T>
-where T: Clone + Send + Sync + 'static
- {
-    pub identity: u64,
-    pub root: bool,
-    pub bounds: QuadTreeBoundsTs,
-    pub items: Vec<QuadTreeLeafTs<T>>,
-    pub stuck: Vec<QuadTreeLeafTs<T>>,
-    pub branches: Vec<Option<Arc<RwLock<QuadTreeBranchTs<T>>>>>,
-    pub parent: Option<Weak<RwLock<QuadTreeBranchTs<T>>>>,
+where
+    T: Clone + Send + Sync + 'static,
+{
+    identity: u64,
+    root: bool,
+    bounds: QuadTreeBoundsTs,
+    items: Vec<QuadTreeLeafTs<T>>,
+    stuck: Vec<QuadTreeLeafTs<T>>,
+    branches: Vec<Option<Arc<RwLock<QuadTreeBranchTs<T>>>>>,
+    parent: Option<Weak<RwLock<QuadTreeBranchTs<T>>>>,
 }
 
-impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
+impl<T> QuadTreeBranchTs<T>
+where
+    T: Clone + Send + Sync,
+{
     pub fn new(
         root: bool,
         x: i64,
@@ -31,21 +38,23 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
         size: i64,
         parent: Option<Weak<RwLock<QuadTreeBranchTs<T>>>>,
     ) -> Arc<RwLock<Self>> {
-    
+        
         Arc::new(RwLock::new(Self::new_unlocked(root, x, y, size, parent)))
     }
 
-    
-    fn new_unlocked(root: bool,
+    fn new_unlocked(
+        root: bool,
         x: i64,
         y: i64,
         size: i64,
         parent: Option<Weak<RwLock<QuadTreeBranchTs<T>>>>,
     ) -> Self {
+        let bounds = QuadTreeBoundsTs::new(x, y, size, size);
+        //println!(" * * * NEW BRANCH {}", bounds);
         Self {
             identity: SEQUENCE.fetch_add(1, Ordering::Relaxed),
             root,
-            bounds: QuadTreeBoundsTs::new(x, y, size, size),
+            bounds,
             items: Vec::with_capacity(2),
             stuck: Vec::new(),
             branches: (0..4).map(|_| None).collect::<Vec<_>>(),
@@ -57,21 +66,22 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
         // 0 1
         // 3 2
 
-        let ymid = self.bounds.y + (self.bounds.h / 2);
         let xmid = self.bounds.x + (self.bounds.w / 2);
+        let ymid = self.bounds.y + (self.bounds.h / 2);
+        
 
-        if other.y + other.h <= ymid {
-            if other.x + other.w <= xmid {
+        if other.bottom() >= ymid {
+            if other.right() <= xmid {
                 return 0;
             }
-            if other.x >= xmid {
+            if other.left() >= xmid {
                 return 1;
             }
-        } else if other.y >= ymid {
-            if other.x + other.w <= xmid {
+        } else if other.top() <= ymid {
+            if other.right() <= xmid {
                 return 3;
             }
-            if other.x >= xmid {
+            if other.left() >= xmid {
                 return 2;
             }
         }
@@ -144,7 +154,11 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
         return result;
     }
 
-    fn remove_child(self_pointer: Arc<RwLock<QuadTreeBranchTs<T>>>, child_identity: u64, level: usize) {
+    fn remove_child(
+        self_pointer: Arc<RwLock<QuadTreeBranchTs<T>>>,
+        child_identity: u64,
+        level: usize,
+    ) {
         let mut this = self_pointer.write();
 
         let mut branch_count = 0;
@@ -197,6 +211,7 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
             QuadTreeBranchTs::climb(branch.unwrap(), list);
         }
     }
+
     pub fn task_query(
         &self,
         area: QuadTreeBoundsTs,
@@ -249,6 +264,7 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
         while list.len() > 0 {
             let arc = list.pop().unwrap();
             let tree = arc.read();
+            //println!("items: {}, stuck:{}", tree.items.len(), tree.stuck.len());
             for i in 0..4 {
                 if tree.branches[i].is_none() {
                     continue;
@@ -260,36 +276,59 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
                     list.push(branch_option);
                 }
             }
+            
             for leaf in tree.items.iter() {
+                //println!("check item");
                 if area.intersects(leaf.bounds) {
                     results.push(leaf.clone());
                 }
             }
 
             for leaf in tree.stuck.iter() {
+                //println!("check stuck");
                 if area.intersects(leaf.bounds) {
                     results.push(leaf.clone());
                 }
             }
         }
     }
-
+    
     fn grow(&mut self, zarc: Arc<RwLock<QuadTreeBranchTs<T>>>) {
+        //println!(" * * * GROWING * * * ");
         let size = self.bounds.w;
         let half = size / 2;
 
-        if !self.branches[0].is_none() {
+        // 0 1
+        // 3 2
+        if self.branches[0].is_some() {
             let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x - half,
-                self.bounds.y - half,
+                self.bounds.y + half,
                 size,
                 Some(Arc::downgrade(&zarc)),
             );
             new_tree.branches[2] = self.branches[0].clone();
             self.branches[0] = Some(Arc::new(RwLock::new(new_tree)));
         }
+        
+        // 0 1
+        // 3 2
         if !self.branches[1].is_none() {
+            let mut new_tree = QuadTreeBranchTs::new_unlocked(
+                false,
+                self.bounds.x + half,
+                self.bounds.y + half,
+                size,
+                Some(Arc::downgrade(&zarc)),
+            );
+            new_tree.branches[3] = self.branches[1].clone();
+            self.branches[1] = Some(Arc::new(RwLock::new(new_tree)));
+        }
+
+        // 0 1
+        // 3 2
+        if !self.branches[2].is_none() {
             let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x + half,
@@ -297,25 +336,17 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
                 size,
                 Some(Arc::downgrade(&zarc)),
             );
-            new_tree.branches[3] = self.branches[1].clone();
-            self.branches[1] = Some(Arc::new(RwLock::new(new_tree)));
-        }
-        if !self.branches[2].is_none() {
-            let mut new_tree = QuadTreeBranchTs::new_unlocked(
-                false,
-                self.bounds.x + half,
-                self.bounds.y + half,
-                size,
-                Some(Arc::downgrade(&zarc)),
-            );
             new_tree.branches[0] = self.branches[2].clone();
             self.branches[2] = Some(Arc::new(RwLock::new(new_tree)));
         }
+
+        // 0 1
+        // 3 2
         if !self.branches[3].is_none() {
             let mut new_tree = QuadTreeBranchTs::new_unlocked(
                 false,
                 self.bounds.x - half,
-                self.bounds.y + half,
+                self.bounds.y - half,
                 size,
                 Some(Arc::downgrade(&zarc)),
             );
@@ -364,21 +395,19 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
                 let mut x = this.bounds.x;
                 let mut y = this.bounds.y;
 
-                if 1 == index {
+                // 0 1
+                // 3 2
+                if index == 0 {
+                    y += size;
+                } else if 1 == index {
                     x += size;
+                    y += size;
                 } else if 2 == index {
                     x += size;
-                    y += size;
-                } else if 3 == index {
-                    y += size;
                 }
-                let new_branch = QuadTreeBranchTs::new(
-                    false,
-                    x,
-                    y,
-                    size,
-                    Some(Arc::downgrade(&arc)),
-                );
+                
+                let new_branch =
+                    QuadTreeBranchTs::new(false, x, y, size, Some(Arc::downgrade(&arc)));
                 this.branches[index as usize] = Some(new_branch.clone());
                 new_branch
             } else {
@@ -390,7 +419,10 @@ impl<T> QuadTreeBranchTs<T>where T: Clone + Send + Sync{
     }
 }
 
-fn drop_helper<T: Clone + Send + Sync>(tree: &mut QuadTreeBranchTs<T>, stack: &mut Vec<Arc<RwLock<QuadTreeBranchTs<T>>>>) {
+fn drop_helper<T: Clone + Send + Sync>(
+    tree: &mut QuadTreeBranchTs<T>,
+    stack: &mut Vec<Arc<RwLock<QuadTreeBranchTs<T>>>>,
+) {
     for i in 0..4 {
         if tree.branches[i].is_some() {
             stack.push(mem::replace(&mut tree.branches[i], None).unwrap());
@@ -398,7 +430,8 @@ fn drop_helper<T: Clone + Send + Sync>(tree: &mut QuadTreeBranchTs<T>, stack: &m
     }
 }
 impl<T> Drop for QuadTreeBranchTs<T>
-where T: Clone + Send + Sync
+where
+    T: Clone + Send + Sync,
 {
     fn drop(&mut self) {
         let mut stack = Vec::new();
