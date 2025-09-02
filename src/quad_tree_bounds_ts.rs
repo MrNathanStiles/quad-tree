@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
+use serde::Deserialize;
 
-#[derive(Copy)]
+
+#[derive(Copy, Deserialize)]
 pub struct QuadTreeBoundsTs {
     pub x: i64,
     pub y: i64,
