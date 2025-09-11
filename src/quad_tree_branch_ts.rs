@@ -96,7 +96,7 @@ where
         self.stuck.clear();
     }
 
-    pub fn remove(mut leaf: QuadTreeLeafTs<T>) -> bool {
+    pub fn remove(mut leaf: &QuadTreeLeafTs<T>) -> bool {
         let strong = leaf.get_parent();
         if strong.is_none() {
             return false;
@@ -105,7 +105,8 @@ where
         let parent_mutex = strong.unwrap().clone();
         let mut parent = parent_mutex.write();
 
-        leaf.parent = None;
+        leaf.set_parent(None);
+    
 
         let mut result = false;
         let mut item_count = 0;
@@ -212,43 +213,6 @@ where
         }
     }
 
-    pub fn task_query(
-        &self,
-        area: QuadTreeBoundsTs,
-        task_manager: TaskManager,
-        results: Sender<QuadTreeLeafTs<T>>,
-    ) {
-        if !self.bounds.intersects(area) {
-            return;
-        }
-        for i in 0..4 {
-            if self.branches[i].is_none() {
-                continue;
-            }
-            let branch_mutex = self.branches[i].clone().unwrap();
-
-            let results_clone = results.clone();
-            let task_manager_clone = task_manager.clone();
-
-            let ztask = move || {
-                let branch = branch_mutex.read();
-                branch.task_query(area, task_manager_clone, results_clone);
-            };
-            task_manager.work(ztask).unwrap();
-        }
-        for leaf in self.items.iter() {
-            if area.intersects(leaf.bounds) {
-                results.send(leaf.clone()).unwrap();
-            }
-        }
-
-        for leaf in self.stuck.iter() {
-            if area.intersects(leaf.bounds) {
-                results.send(leaf.clone()).unwrap();
-            }
-        }
-    }
-
     pub fn query(
         arc: &Arc<RwLock<QuadTreeBranchTs<T>>>,
         area: QuadTreeBoundsTs,
@@ -280,7 +244,7 @@ where
             for leaf in tree.items.iter() {
                 //println!("check item");
                 if area.intersects(leaf.bounds) {
-                    results.push(leaf.clone());
+                results.push(leaf.clone());
                 }
             }
 
@@ -372,7 +336,7 @@ where
                 QuadTreeBranchTs::grow(&mut *this, arc.clone());
             }
         }
-        new_leaf.parent = Some(Arc::downgrade(&arc));
+        new_leaf.set_parent(Some(Arc::downgrade(&arc)));
         this.items.push(new_leaf);
         if this.items.len() < 2 {
             return;
@@ -384,7 +348,7 @@ where
             let index = this.index(leaf.bounds);
 
             if index < 0 || this.bounds.w < 16 {
-                leaf.parent = Some(Arc::downgrade(&arc));
+                leaf.set_parent(Some(Arc::downgrade(&arc)));
                 this.stuck.push(leaf);
                 continue;
             }
